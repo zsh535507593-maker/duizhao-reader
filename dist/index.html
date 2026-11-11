@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- 新项目使用原生 HTML / CSS / JS，无现成组件或 Tailwind。主内容为两份 PDF，次级为翻页和缩放，说明与状态最低。
+唯一主操作为打开 PDF。暖灰中性色、4/8/12/16/24/32/48 间距、12/14/16/20/24/36 字号、400/600 字重。主题只改变阅读环境，默认保留文档原色。 -->
+<html lang="zh-CN" data-theme="paper">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f4f2ed"><meta name="description" content="对照，一处安静的双卷阅读空间。原件与改件并排，同步翻页，自由对齐。本地 PDF 无需上传。">
+  <title>对照 · 双卷阅读</title><link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="vendor/pdf_viewer.css"><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<svg class="symbols" aria-hidden="true"><defs>
+<symbol id="book" viewBox="0 0 24 24"><path d="M12 5v16M3 3.5c4-1 6 .5 9 2 3-1.5 5-3 9-2v15c-4-1-6 .5-9 2-3-1.5-5-3-9-2z"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="file" viewBox="0 0 24 24"><path d="M14 3H5v18h14V8zM14 3v5h5M8 12h8M8 16h6"/></symbol>
+<symbol id="chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+<symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="link" viewBox="0 0 24 24"><path d="m9 15 6-6M7 14l-2 2a4 4 0 0 0 5.7 5.7l4-4a4 4 0 0 0 0-5.7M17 10l2-2a4 4 0 0 0-5.7-5.7l-4 4a4 4 0 0 0 0 5.7"/></symbol>
+<symbol id="swap" viewBox="0 0 24 24"><path d="M3 7h18m-4-4 4 4-4 4M21 17H3m4-4-4 4 4 4"/></symbol>
+<symbol id="search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+<symbol id="focus" viewBox="0 0 24 24"><path d="M3 9V3h6m6 0h6v6m0 6v6h-6M9 21H3v-6"/></symbol>
+<symbol id="theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v16"/></symbol>
+<symbol id="close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+<symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+<symbol id="more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+<symbol id="shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6zM8 12l3 3 5-6"/></symbol>
+<symbol id="rotate" viewBox="0 0 24 24"><path d="M3 11a9 9 0 1 1 2 7M3 4v7h7"/></symbol>
+<symbol id="bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></symbol>
+<symbol id="help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 2-3 4m0 3h.01"/></symbol>
+</defs></svg>
+<header class="topbar">
+  <a class="brand" href="./" aria-label="对照首页"><span class="brand-icon"><svg><use href="#book"/></svg></span><span class="wordmark">对照</span><span class="brand-divider"></span><span class="brand-caption">双卷阅读</span></a>
+  <div class="top-actions"><button class="quiet help-open" aria-label="使用指南"><svg><use href="#help"/></svg><span class="optional">使用指南</span></button><button class="primary" id="openPair"><svg><use href="#plus"/></svg>打开 PDF</button></div>
+</header>
+<main>
+  <section class="workspace-heading"><div><span class="eyebrow">A QUIET SPACE FOR READING</span><h1>两卷相照，细读其间。</h1></div><p>原件与改件，一目相对。<br>让每一处文字，都有迹可循。</p></section>
+  <section class="toolbar" aria-label="对照阅读设置">
+    <div class="tool-group"><span class="mode-label"><svg><use href="#book"/></svg>双栏对读</span><span class="divider"></span><button id="syncBtn" class="tool selected" aria-pressed="true" title="同步翻页与页内滚动"><svg><use href="#link"/></svg><span id="syncLabel">同步阅读</span><span class="toggle-track"><i></i></span></button><button id="alignBtn" class="tool" title="把当前左右两页作为对应页" disabled>对齐当前页</button><span class="offset" id="offsetLabel" hidden></span></div>
+    <div class="tool-group"><button class="icon" id="swapBtn" aria-label="交换左右文件" title="交换左右文件" disabled><svg><use href="#swap"/></svg></button><button class="icon" id="searchBtn" aria-label="搜索文档" title="搜索文档（Ctrl+F）" disabled><svg><use href="#search"/></svg></button><span class="divider"></span><div class="popover-wrap"><button class="tool" id="themeBtn" aria-expanded="false" aria-controls="themeMenu"><svg><use href="#theme"/></svg><span id="themeName">暖纸</span><svg class="small"><use href="#down"/></svg></button><div id="themeMenu" class="popover theme-menu" hidden><span class="popover-label">阅读外观</span><div class="theme-options"><button data-theme-choice="light" aria-pressed="false"><span class="swatch light">文</span>白昼</button><button data-theme-choice="paper" aria-pressed="true"><span class="swatch paper">文</span>暖纸</button><button data-theme-choice="dark" aria-pressed="false"><span class="swatch dark">文</span>墨夜</button></div><label class="checkbox"><input id="tintPages" type="checkbox">页面跟随阅读主题</label><p>默认保留 PDF 原色，便于核对命盘配色。</p></div></div><button class="icon" id="focusBtn" aria-label="专注阅读" title="专注阅读（F）" aria-pressed="false"><svg><use href="#focus"/></svg></button></div>
+  </section>
+  <div class="mobile-tabs" role="tablist" aria-label="选择阅读侧"><button role="tab" id="tab-left" aria-selected="true" aria-controls="pane-left" data-side="left">原件</button><button role="tab" id="tab-right" aria-selected="false" aria-controls="pane-right" data-side="right">改件</button></div>
+  <section class="reader" id="reader" aria-label="PDF 对照阅读区"><div id="pane-left" class="pane active" data-side="left"></div><div class="splitter" id="splitter" role="separator" tabindex="0" aria-label="调整左右宽度" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="70" aria-valuenow="50"><span></span></div><div id="pane-right" class="pane" data-side="right"></div></section>
+  <footer class="statusbar"><span class="local-note"><svg><use href="#shield"/></svg><span id="storageLabel">文件仅在本机阅读</span></span><button class="quiet" id="demoBtn">试读示例 <span>↗</span></button><span class="shortcut-note"><kbd>←</kbd><kbd>→</kbd> 翻页 <span>·</span> <kbd>F</kbd> 专注阅读</span></footer>
+</main>
+<footer class="site-footer"><span class="serif">对照</span><span>一页原文，一页新意。</span><button class="quiet" id="sessionBtn">阅读记录</button></footer>
+<input id="pairInput" type="file" accept="application/pdf,.pdf" multiple hidden><input id="leftInput" type="file" accept="application/pdf,.pdf" hidden><input id="rightInput" type="file" accept="application/pdf,.pdf" hidden>
+<dialog id="modal"><div id="modalContent"></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="app.mjs"></script>
+</body></html>

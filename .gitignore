@@ -1,0 +1,6 @@
+node_modules/
+.sites-runtime/
+tests/fixtures/
+tests/screenshots/
+*.tar.gz
+*.zip
