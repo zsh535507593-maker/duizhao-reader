@@ -1,0 +1,37 @@
+@font-face{font-family:'Annotation Sans';src:url('./fonts/AnnotationSans-Regular.ttf') format('truetype');font-weight:400;font-display:block}
+.page-space{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:16px;padding-bottom:32px;overflow-anchor:none}
+.page-shell{position:relative;flex:none;margin:0 0 20px;max-width:none}
+.page-caption{font-size:11px;letter-spacing:.04em;color:var(--muted);height:24px;line-height:20px;text-align:center;user-select:none}
+.pdf-page{position:relative;isolation:isolate}
+.pdf-page[aria-busy=true]:before{content:'正在显示…';position:absolute;inset:40% 0 auto;text-align:center;color:#888;font-size:13px;z-index:0}
+.pdf-page>canvas{position:relative;z-index:1}
+.pane-viewport{scroll-behavior:auto;overflow-anchor:none}
+.annotation-layer{position:absolute;inset:0;width:100%;height:100%;stroke:none;z-index:3;pointer-events:none;overflow:hidden;touch-action:auto}
+body[data-annotation-tool]:not([data-annotation-tool=read]) .annotation-layer{pointer-events:auto;touch-action:none;cursor:crosshair}
+body[data-annotation-tool=select] .annotation-layer{cursor:pointer}
+body.annotation-pan .annotation-layer{pointer-events:none!important;touch-action:auto!important}
+.annotation-mark text{font-family:'Annotation Sans',sans-serif;font-weight:400}
+.annotation-toolbar{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:0 0 12px}
+.annotation-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.annotation-target{color:var(--secondary);font-size:12px;min-width:92px}
+.annotation-tools{display:flex;align-items:center;gap:2px;flex-wrap:wrap}
+.annotation-tool{padding:7px 10px;min-height:34px}
+.annotation-tool[aria-pressed=true]{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1px var(--line)}
+.color-control,.size-control{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--secondary)}
+input[type=color]{width:30px;height:28px;padding:2px;border:1px solid var(--line);border-radius:5px;background:var(--surface);cursor:pointer}
+.size-control select{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:5px;padding:4px}
+.history-controls{display:flex;gap:2px;margin-left:auto}
+.annotation-hint{font-size:12px;color:var(--secondary);margin-top:8px;line-height:1.6}
+.export-button{font-size:13px;min-height:36px;padding:8px 12px}
+.editor-field{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--secondary);margin-bottom:16px}
+.editor-field textarea,.editor-field input[type=number]{font:inherit;color:var(--ink);border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:10px;resize:vertical;width:100%}
+.editor-field-row{display:flex;gap:24px;align-items:flex-start}.editor-field-row .editor-field{max-width:120px}
+.editor-explain{font-size:12px;line-height:1.8;color:var(--secondary)}
+#annotationError{color:#b34438;font-size:13px}
+.selection-highlight{position:fixed;z-index:100;padding:8px 12px;min-height:36px;background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:0 3px 15px #0002;border-radius:6px;font:inherit;font-size:12px;cursor:pointer}
+.selection-highlight:before{content:'';display:inline-block;background:#f3cc45;width:9px;height:9px;border-radius:2px;margin-right:6px}
+.page-retry{position:absolute;inset:40% 10% auto;width:80%;padding:20px;border:0;background:#f5f5f3;color:#555;cursor:pointer}
+body:has(#annotationToolbar:not([hidden])) .reader{height:calc(100dvh - 440px)}
+body.focused:has(#annotationToolbar:not([hidden])) .reader{height:calc(100dvh - 214px)}
+@media(max-width:1050px){.annotation-target{width:100%}.history-controls{margin-left:0}.toolbar{flex-wrap:wrap;gap:8px}.top-actions{gap:8px}}
+@media(max-width:760px){.export-button{font-size:12px;padding:8px}.top-actions .help-open{display:none}.annotation-toolbar{padding:10px;margin-bottom:10px}.annotation-controls{gap:8px}.annotation-tool{min-height:38px;padding:7px 9px}.annotation-hint{font-size:11px}.page-space{padding-top:12px}.annotation-target{width:auto;flex:1 1 100%}.history-controls{margin-left:auto}body:has(#annotationToolbar:not([hidden])) .reader{height:calc(100dvh - 570px);min-height:340px}body.focused:has(#annotationToolbar:not([hidden])) .reader{height:calc(100dvh - 340px)}}

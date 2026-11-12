@@ -6,7 +6,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#f4f2ed"><meta name="description" content="对照，一处安静的双卷阅读空间。原件与改件并排，同步翻页，自由对齐。本地 PDF 无需上传。">
   <title>对照 · 双卷阅读</title><link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="vendor/pdf_viewer.css"><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="vendor/pdf_viewer.css"><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="editor.css">
 </head>
 <body>
 <svg class="symbols" aria-hidden="true"><defs>
@@ -35,7 +35,7 @@
 <main>
   <section class="workspace-heading"><div><span class="eyebrow">A QUIET SPACE FOR READING</span><h1>两卷相照，细读其间。</h1></div><p>原件与改件，一目相对。<br>让每一处文字，都有迹可循。</p></section>
   <section class="toolbar" aria-label="对照阅读设置">
-    <div class="tool-group"><span class="mode-label"><svg><use href="#book"/></svg>双栏对读</span><span class="divider"></span><button id="syncBtn" class="tool selected" aria-pressed="true" title="同步翻页与页内滚动"><svg><use href="#link"/></svg><span id="syncLabel">同步阅读</span><span class="toggle-track"><i></i></span></button><button id="alignBtn" class="tool" title="把当前左右两页作为对应页" disabled>对齐当前页</button><span class="offset" id="offsetLabel" hidden></span></div>
+    <div class="tool-group"><span class="mode-label"><svg><use href="#book"/></svg>双栏对读</span><span class="divider"></span><button id="syncBtn" class="tool selected" aria-pressed="true" title="同步连续滚动与翻页"><svg><use href="#link"/></svg><span id="syncLabel">同步阅读</span><span class="toggle-track"><i></i></span></button><button id="alignBtn" class="tool" title="把当前左右两页作为对应页" disabled>对齐当前页</button><span class="offset" id="offsetLabel" hidden></span></div>
     <div class="tool-group"><button class="icon" id="swapBtn" aria-label="交换左右文件" title="交换左右文件" disabled><svg><use href="#swap"/></svg></button><button class="icon" id="searchBtn" aria-label="搜索文档" title="搜索文档（Ctrl+F）" disabled><svg><use href="#search"/></svg></button><span class="divider"></span><div class="popover-wrap"><button class="tool" id="themeBtn" aria-expanded="false" aria-controls="themeMenu"><svg><use href="#theme"/></svg><span id="themeName">暖纸</span><svg class="small"><use href="#down"/></svg></button><div id="themeMenu" class="popover theme-menu" hidden><span class="popover-label">阅读外观</span><div class="theme-options"><button data-theme-choice="light" aria-pressed="false"><span class="swatch light">文</span>白昼</button><button data-theme-choice="paper" aria-pressed="true"><span class="swatch paper">文</span>暖纸</button><button data-theme-choice="dark" aria-pressed="false"><span class="swatch dark">文</span>墨夜</button></div><label class="checkbox"><input id="tintPages" type="checkbox">页面跟随阅读主题</label><p>默认保留 PDF 原色，便于核对命盘配色。</p></div></div><button class="icon" id="focusBtn" aria-label="专注阅读" title="专注阅读（F）" aria-pressed="false"><svg><use href="#focus"/></svg></button></div>
   </section>
   <div class="mobile-tabs" role="tablist" aria-label="选择阅读侧"><button role="tab" id="tab-left" aria-selected="true" aria-controls="pane-left" data-side="left">原件</button><button role="tab" id="tab-right" aria-selected="false" aria-controls="pane-right" data-side="right">改件</button></div>

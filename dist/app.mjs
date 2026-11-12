@@ -1,6 +1,9 @@
 import * as pdfjs from './vendor/pdf.mjs';
 import { clamp, pageNumber, pairedPage, fitScale, scrollFraction, excerpt, fileKey, validPDF } from './reader-core.mjs';
 import { storage } from './storage.mjs';
+import { ContinuousReader } from './continuous.mjs';
+import { AnnotationEditor } from './annotations.mjs';
+let editor=null;
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.mjs', import.meta.url).href;
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
@@ -25,6 +28,7 @@ class Pane {
     this.side=side; this.el=$(`#pane-${side}`); this.doc=null; this.file=null; this.page=1; this.zoom='width'; this.rotation=0; this.renderSerial=0; this.loadSerial=0; this.textCache=new Map(); this.scrollRestore=0;
     this.el.innerHTML = `<div class="pane-head"><div class="doc-identity"><span class="doc-badge">${side==='left'?'原':'改'}</span><div class="doc-text"><h2 class="doc-title">${names[side]}</h2><div class="doc-meta">${side==='left'?'ORIGINAL DOCUMENT':'REVISED DOCUMENT'}</div></div></div><div class="pane-actions"><button class="icon choose-file" title="打开${names[side]} PDF" aria-label="打开${names[side]} PDF">${icon('plus')}</button><button class="icon pane-menu-button" title="文档选项" aria-label="${names[side]}选项" hidden>${icon('more')}</button></div></div><div class="pane-viewport"><div class="empty-state"><div class="drop-card"><span class="corner-label">${side==='left'?'01 / ORIGINAL':'02 / REVISED'}</span><div class="paper-icon"></div><h2>放入${names[side]}</h2><p>${side==='left'?'最初的文字，保留原本的样子。':'翻译或修订，读见新的变化。'}</p><button class="outline choose-file">${icon('file')}选择 PDF 文件</button><span class="drop-caption">或将文件拖放至此</span></div></div><div class="page-space" hidden><div class="pdf-page"></div></div></div><div class="pane-footer"><div class="empty-footer"><span>支持扫描件与文字 PDF</span><span>等待打开</span></div><div class="page-nav" hidden><button class="icon prev" aria-label="${names[side]}上一页">${icon('chevron','flip')}</button><input class="page-input" type="number" min="1" aria-label="${names[side]}页码"><span class="page-total"></span><button class="icon next" aria-label="${names[side]}下一页">${icon('chevron')}</button></div><div class="zoom-controls" hidden><button class="icon zoom-step minus" aria-label="${names[side]}缩小">−</button><select class="zoom-select" aria-label="${names[side]}缩放"><option value="width">适合宽度</option><option value="page">整页</option>${[.5,.75,1,1.25,1.5,2,3,4].map(n=>`<option value="${n}">${n*100}%</option>`).join('')}</select><button class="icon zoom-step zoom-plus" aria-label="${names[side]}放大">${icon('plus')}</button></div></div><div class="drop-overlay">松开放入${names[side]}</div><div class="page-loading" hidden><span class="spinner"></span><span>正在打开文档</span></div>`;
     this.viewport=$('.pane-viewport',this.el); this.pageEl=$('.pdf-page',this.el); this.loading=$('.page-loading',this.el);
+    this.scroller=new ContinuousReader(this,entry=>editor?.mount(this,entry));
     $$('.choose-file',this.el).forEach(b=>b.onclick=()=>this.choose());
     $('.prev',this.el).onclick=()=>this.goto(this.page-1);
     $('.next',this.el).onclick=()=>this.goto(this.page+1);
@@ -57,14 +61,15 @@ class Pane {
       const doc=await task.promise;
       if(serial!==this.loadSerial){await doc.destroy();return;}
       this.renderTask?.cancel();this.textLayer?.cancel(); this.renderSerial++;
-      const old=this.doc;this.doc=doc;this.file=file;this.page=pageNumber(options.page??1,doc.numPages);this.zoom=options.zoom||'width';this.rotation=options.rotation||0;this.textCache=new Map();this.pendingTask=null;
+      this.scroller.destroy();const old=this.doc;this.doc=doc;this.file=file;this.page=pageNumber(options.page??1,doc.numPages);this.zoom=options.zoom||'width';this.rotation=options.rotation||0;this.textCache=new Map();this.pendingTask=null;
       old?.destroy();
       $('.doc-title',this.el).textContent=file.name;$('.doc-title',this.el).title=file.name;
       $('.doc-meta',this.el).textContent=`${names[this.side]} · ${doc.numPages} 页 · ${formatSize(file.size)}`;
       $('.empty-state',this.el).hidden=true;$('.page-space',this.el).hidden=false;$('.empty-footer',this.el).hidden=true;
       for(const q of ['.page-nav','.zoom-controls','.pane-menu-button'])$(q,this.el).hidden=false;
-      this.update();updateGlobal();await this.render();
-      if(options.scroll)this.viewport.scrollTop=options.scroll*(this.viewport.scrollHeight-this.viewport.clientHeight);
+      await editor.attach(this);if(serial!==this.loadSerial)return;
+      this.update();updateGlobal();await this.scroller.open();
+      this.scroller.move(this.page,options.within??0);
       if(!options.restore){state.bookmarks=[];state.offset=panes.right.page-panes.left.page;updateGlobal();await saveFile(this.side,file);saveState();}
       return true;
     } catch(e) {
@@ -81,46 +86,22 @@ class Pane {
   }
   update(){if(!this.doc)return;$('.page-input',this.el).value=this.page;$('.page-input',this.el).max=this.doc.numPages;$('.page-total',this.el).textContent=`/ ${this.doc.numPages}`;$('.prev',this.el).disabled=this.page<=1;$('.next',this.el).disabled=this.page>=this.doc.numPages;const select=$('.zoom-select',this.el);if(![...select.options].some(o=>o.value===String(this.zoom))){select.add(new Option(`${Math.round(Number(this.zoom)*100)}%`,String(this.zoom)));}select.value=this.zoom;}
   async goto(value, propagate=true){
-    if(!this.doc)return;const n=pageNumber(value,this.doc.numPages,this.page);if(n===this.page && this.el.dataset.renderStatus!=='error'){this.update();return;}const request=this.navigationSerial=(this.navigationSerial||0)+1;this.page=n;this.update();await this.render();
-    if(request!==this.navigationSerial)return;
-    if(propagate&&state.synced){const peer=panes[other(this.side)];if(peer.doc)await peer.goto(pairedPage(n,this.side,state.offset,peer.doc.numPages),false);}
+    if(!this.doc)return;const n=pageNumber(value,this.doc.numPages,this.page);
+    this.scroller.move(n,0);await this.scroller.paint();
+    if(propagate&&state.synced){const peer=panes[other(this.side)];if(peer.doc)peer.scroller.move(pairedPage(n,this.side,state.offset,peer.doc.numPages),0);}
     saveState();
   }
-  async render(preserve=false){
-    if(!this.doc||!this.el.clientWidth)return;
-    const serial=++this.renderSerial;this.el.dataset.renderStatus='loading';this.renderTask?.cancel();this.textLayer?.cancel();
-    const fraction=preserve?scrollFraction(this.viewport.scrollTop,this.viewport.scrollHeight,this.viewport.clientHeight):0;
-    try{
-      const page=await this.doc.getPage(this.page);if(serial!==this.renderSerial)return;
-      const rotation=(page.rotate+this.rotation)%360;
-      const base=page.getViewport({scale:1,rotation});const inset=window.innerWidth<=760?32:48;
-      const scale=fitScale(this.zoom,Math.max(100,this.viewport.clientWidth-inset),Math.max(100,this.viewport.clientHeight-inset),base.width,base.height);
-      this.actualScale=scale;const viewport=page.getViewport({scale,rotation});
-      const canvas=document.createElement('canvas');const textDiv=document.createElement('div');textDiv.className='textLayer';
-      this.pageEl.replaceChildren(canvas,textDiv);this.pageEl.style.width=`${viewport.width}px`;this.pageEl.style.height=`${viewport.height}px`;
-      this.pageEl.style.setProperty('--scale-factor',String(scale));this.pageEl.style.setProperty('--total-scale-factor',String(scale*page.userUnit));this.pageEl.style.setProperty('--user-unit',String(page.userUnit));this.pageEl.style.setProperty('--scale-round-x','1px');this.pageEl.style.setProperty('--scale-round-y','1px');
-      const dpr=Math.min(window.devicePixelRatio||1,2,Math.sqrt(14000000/(viewport.width*viewport.height)));
-      canvas.width=Math.floor(viewport.width*dpr);canvas.height=Math.floor(viewport.height*dpr);
-      this.renderTask=page.render({canvasContext:canvas.getContext('2d'),viewport,transform:dpr!==1?[dpr,0,0,dpr,0,0]:null});
-      await this.renderTask.promise;if(serial!==this.renderSerial)return;
-      this.textLayer=new pdfjs.TextLayer({textContentSource:page.streamTextContent(),container:textDiv,viewport});
-      await this.textLayer.render();if(serial!==this.renderSerial)return;
-      this.viewport.scrollTop=fraction*(this.viewport.scrollHeight-this.viewport.clientHeight);
-      if(!preserve)this.viewport.scrollLeft=0;
-      this.el.dataset.renderedPage=String(this.page);this.el.dataset.renderStatus='ready';
-    }catch(e){if(e.name==='RenderingCancelledException'||e.name==='AbortException'||serial!==this.renderSerial)return;console.error(e);this.el.dataset.renderStatus='error';this.pageEl.replaceChildren(safeText('div','此页暂时无法显示，请重新翻页或更换 PDF。','render-error'));toast('此页显示失败，请尝试重新打开文件。');}
-  }
+  async render(preserve=false){if(!this.doc||!this.el.clientWidth)return;this.scroller.layout(preserve);await this.scroller.paint();}
   setZoom(zoom){this.zoom=zoom;this.update();this.render(true);saveState();}
   stepZoom(direction){this.setZoom(String(clamp(Math.round(((this.actualScale||1)+direction*.15)*100)/100,.25,4)));}
   onScroll(){
-    if(!this.doc)return;
-    if(scrollLock && scrollLock!==this.side)return;
-    saveState();if(!state.synced)return;const peer=panes[other(this.side)];if(!peer.doc)return;
-    scrollLock=this.side;clearTimeout(scrollUnlock);
-    const fraction=scrollFraction(this.viewport.scrollTop,this.viewport.scrollHeight,this.viewport.clientHeight);
+    if(!this.doc||!this.scroller.entries.length)return;
+    const anchor=this.scroller.position();this.page=anchor.page;this.pageEl=this.scroller.entries[this.page-1].el;this.actualScale=this.scroller.entries[this.page-1].viewport.scale;this.update();this.scroller.schedule();
+    saveState();if(performance.now()<(this.ignoreSyncUntil||0)||!state.synced)return;
+    const peer=panes[other(this.side)];if(!peer.doc)return;
+    peer.scroller.move(pairedPage(anchor.page,this.side,state.offset,peer.doc.numPages),anchor.fraction);
     const h=scrollFraction(this.viewport.scrollLeft,this.viewport.scrollWidth,this.viewport.clientWidth);
-    peer.viewport.scrollTop=fraction*(peer.viewport.scrollHeight-peer.viewport.clientHeight);peer.viewport.scrollLeft=h*(peer.viewport.scrollWidth-peer.viewport.clientWidth);
-    scrollUnlock=setTimeout(()=>scrollLock='',100);
+    peer.viewport.scrollLeft=h*(peer.viewport.scrollWidth-peer.viewport.clientWidth);
   }
   menu(){
     dialog(`${names[this.side]}选项`,`<div id="fileNameFull" class="file-name-full"></div><div class="file-menu"><button id="replaceFile">${icon('file')}更换这份 PDF</button><button id="rotateFile">${icon('rotate')}顺时针旋转 90°</button><button id="downloadFile">${icon('file')}下载当前文件</button><button id="closeFile">${icon('close')}关闭这份文档</button></div>`);
@@ -129,7 +110,7 @@ class Pane {
     $('#closeFile').onclick=()=>{modal.close();this.clear();};
   }
   async clear(){
-    this.loadSerial++;this.renderSerial++;this.pendingTask?.destroy();this.renderTask?.cancel();this.textLayer?.cancel();this.doc?.destroy();this.doc=null;this.file=null;this.page=1;this.pageEl.replaceChildren();
+    this.scroller.destroy();this.annotations=null;this.annotationKey=null;editor.attachSerial[this.side]++;this.loadSerial++;this.renderSerial++;this.pendingTask?.destroy();this.renderTask?.cancel();this.textLayer?.cancel();this.doc?.destroy();this.doc=null;this.file=null;this.page=1;this.pageEl.replaceChildren();
     $('.doc-title',this.el).textContent=names[this.side];$('.doc-title',this.el).removeAttribute('title');$('.doc-meta',this.el).textContent=this.side==='left'?'ORIGINAL DOCUMENT':'REVISED DOCUMENT';
     $('.empty-state',this.el).hidden=false;$('.empty-footer',this.el).hidden=false;
     for(const q of ['.page-space','.page-nav','.zoom-controls','.pane-menu-button'])$(q,this.el).hidden=true;
@@ -138,9 +119,11 @@ class Pane {
   async text(pageNo){if(this.textCache.has(pageNo))return this.textCache.get(pageNo);const page=await this.doc.getPage(pageNo);const content=await page.getTextContent();const text=content.items.map(x=>x.str+(x.hasEOL?'\n':'')).join('');this.textCache.set(pageNo,text);return text;}
 }
 const panes={left:new Pane('left'),right:new Pane('right')};
+editor=new AnnotationEditor(panes,state,{dialog,toast,modal,setActive});
 function formatSize(size){return size<1024*1024?`${Math.round(size/1024)} KB`:`${(size/1024/1024).toFixed(1)} MB`;}
-function setActive(side){state.active=side;for(const [key,p]of Object.entries(panes)){p.el.classList.toggle('active',key===side);$(`#tab-${key}`).setAttribute('aria-selected',key===side);$(`#tab-${key}`).tabIndex=key===side?0:-1;}if(panes[side].doc&&!panes[side].pageEl.clientWidth)panes[side].render();}
+function setActive(side){state.active=side;for(const [key,p]of Object.entries(panes)){if(key!==side&&p.el.clientWidth&&innerWidth<=760)p.scroller.pendingAnchor=p.scroller.position();p.el.classList.toggle('active',key===side);$(`#tab-${key}`).setAttribute('aria-selected',key===side);$(`#tab-${key}`).tabIndex=key===side?0:-1;}editor?.refresh();if(panes[side].doc&&!panes[side].scroller.entries[0]?.el.clientWidth)panes[side].render(true);}
 function updateGlobal(){
+  editor?.refresh();
   const both=!!panes.left.doc&&!!panes.right.doc;$('#alignBtn').disabled=!both;$('#swapBtn').disabled=!both;$('#searchBtn').disabled=!panes.left.doc&&!panes.right.doc;
   $('#syncBtn').classList.toggle('selected',state.synced);$('#syncBtn').setAttribute('aria-pressed',state.synced);$('#syncLabel').textContent=state.synced?'同步阅读':'独立阅读';
   $('#offsetLabel').hidden=!both||!state.offset;$('#offsetLabel').textContent=`右页 ${state.offset>=0?'+':''}${state.offset}`;
@@ -165,7 +148,7 @@ $('#focusBtn').onclick=focusMode;
 function setSplit(percent){state.split=clamp(percent,30,70);$('#reader').style.setProperty('--split',`${state.split/(100-state.split)}fr`);$('#splitter').setAttribute('aria-valuenow',Math.round(state.split));saveState();}
 $('#splitter').addEventListener('pointerdown',e=>{e.preventDefault();e.target.setPointerCapture(e.pointerId);const move=ev=>{const r=$('#reader').getBoundingClientRect();setSplit((ev.clientX-r.left)/r.width*100);};const stop=()=>{$('#splitter').removeEventListener('pointermove',move);};$('#splitter').addEventListener('pointermove',move);$('#splitter').addEventListener('pointerup',stop,{once:true});$('#splitter').addEventListener('pointercancel',stop,{once:true});});
 $('#splitter').ondblclick=()=>setSplit(50);$('#splitter').onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home'].includes(e.key)){e.preventDefault();e.stopPropagation();setSplit(e.key==='Home'?50:state.split+(e.key==='ArrowRight'?2:-2));}};
-function showHelp(){dialog('读得从容',`<dl class="help-list"><dt>放入文件</dt><dd>左边原件，右边改件。支持拖放，也可以点击选择文件。扫描 PDF 可直接阅读。</dd><dt>同步对读</dt><dd>开启同步后，两边一起翻页、滚动。页数不同时会停在各自最后一页。</dd><dt>页码对齐</dt><dd>先关闭同步，各自翻到对应内容，再点击“对齐当前页”。之后会保留这段页码差。</dd><dt>放大细读</dt><dd>每边独立缩放，支持适合宽度、整页和放大。按住 Ctrl 滚轮可缩放，拖动中缝可调整左右宽度。</dd><dt>搜索复制</dt><dd>有文字层的 PDF 支持搜索和选字复制。纯扫描件没有文字层时，需先进行 OCR。</dd><dt>阅读外观</dt><dd>白昼、暖纸和墨夜三种主题。默认保留文件原色；启用“页面跟随阅读主题”会改变屏幕显示色彩。</dd><dt>快捷键</dt><dd>← → 翻页，F 专注，B 保存当前对照页，Ctrl+F 搜索。先点一侧即可选择操作对象。</dd></dl><p>文件在当前浏览器处理，不会上传。阅读记录可以保存在本机，也可以随时清除。手机可在“原件 / 改件”之间切换。</p>`);}
+function showHelp(){dialog('读得从容',`<dl class="help-list"><dt>放入文件</dt><dd>左边原件，右边改件。支持拖放，也可以点击选择文件。扫描 PDF 可直接阅读。</dd><dt>连续滚动</dt><dd>滚轮、触控板或手指可连续滑过所有页面。底部页码随阅读位置更新，也可以输入页码快速跳转。</dd><dt>同步对读</dt><dd>开启同步后，左右按对应页及页内位置联动；支持页码差与不同页面尺寸。</dd><dt>批注与修订</dt><dd>打开“批注工具”，可框选荧光、自由涂画、添加文字与批注。阅读模式中选中文字，也可直接荧光标记。“选择”可修改或删除已有标记；Ctrl+Z 撤销，Ctrl+Shift+Z 重做。修订用白底覆盖并添加文字，原文字层仍保留。</dd><dt>导出 PDF</dt><dd>点击右上方“导出 PDF”，选择原件或改件。批注会固定写入导出页面；原文件不受影响。本机保存的批注可在重新打开原文件后继续编辑。</dd><dt>页码对齐</dt><dd>先关闭同步，各自翻到对应内容，再点击“对齐当前页”。之后会保留这段页码差。</dd><dt>放大细读</dt><dd>每边独立缩放，支持适合宽度、整页和放大。按住 Ctrl 滚轮可缩放，拖动中缝可调整左右宽度。</dd><dt>搜索复制</dt><dd>有文字层的 PDF 支持搜索和选字复制。纯扫描件没有文字层时，需先进行 OCR。</dd><dt>阅读外观</dt><dd>白昼、暖纸和墨夜三种主题。默认保留文件原色；启用“页面跟随阅读主题”会改变屏幕显示色彩。</dd><dt>快捷键</dt><dd>← → 翻页，F 专注，B 保存当前对照页，Ctrl+F 搜索。先点一侧即可选择操作对象。</dd></dl><p>文件在当前浏览器处理，不会上传。阅读记录可以保存在本机，也可以随时清除。手机可在“原件 / 改件”之间切换。</p>`);}
 $$('.help-open').forEach(b=>b.onclick=showHelp);
 function showSearch(){
   if(!panes.left.doc&&!panes.right.doc)return;
@@ -183,19 +166,19 @@ function showSearch(){
   };
 }
 $('#searchBtn').onclick=showSearch;
-function snapshotPane(p){return{page:p.page,zoom:p.zoom,rotation:p.rotation,scroll:scrollFraction(p.viewport.scrollTop,p.viewport.scrollHeight,p.viewport.clientHeight),key:p.file?fileKey(p.file):null};}
+function snapshotPane(p){return{page:p.page,zoom:p.zoom,rotation:p.rotation,within:p.scroller.position().fraction,key:p.file?fileKey(p.file):null};}
 function saveState(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{const data={...state,left:state.remember?snapshotPane(panes.left):null,right:state.remember?snapshotPane(panes.right):null,bookmarks:state.remember?state.bookmarks:[]};try{localStorage.setItem('duizhao-settings',JSON.stringify(data));}catch{$('#storageLabel').textContent='本次阅读 · 无法保存进度';}},250);}
 async function saveFile(side,file){if(!state.remember)return;try{await storage('put',side,{blob:file,name:file.name,lastModified:file.lastModified});$('#storageLabel').textContent='文件与进度仅保存在本机';}catch{$('#storageLabel').textContent='文件仅在本次阅读中保留';toast('浏览器未能保存文件，刷新后请重新打开。');}}
 function addBookmark(){if(!panes.left.doc&&!panes.right.doc)return;const entry={left:panes.left.page,right:panes.right.page};if(state.bookmarks.some(x=>x.left===entry.left&&x.right===entry.right)){toast('这组对照页已保存。');return;}state.bookmarks.push(entry);saveState();toast(`已保存对照页 ${entry.left} / ${entry.right}，可在阅读记录中查看。`);}
 function showSession(){
-  dialog('阅读记录',`<div class="storage-option"><label class="checkbox"><input type="checkbox" id="rememberFiles" ${state.remember?'checked':''}>在本机记住文件与阅读进度</label><p>仅此浏览器可用。清除浏览器数据后，需重新选择文件。</p></div><button class="outline" id="bookmarkCurrent">${icon('bookmark')}保存当前对照页</button><div id="bookmarks" class="bookmarks-list"></div><div class="modal-actions"><button class="quiet" id="clearStored">清除本机记录</button><button class="primary" id="sessionDone">完成</button></div>`);
-  $('#rememberFiles').onchange=async e=>{state.remember=e.target.checked;if(state.remember){for(const side of ['left','right'])if(panes[side].file)await saveFile(side,panes[side].file);}else{await storage('clear').catch(()=>{});$('#storageLabel').textContent='文件仅在本次阅读中保留';}saveState();};
-  $('#bookmarkCurrent').onclick=()=>{addBookmark();drawBookmarks();};$('#clearStored').onclick=async()=>{await storage('clear').catch(()=>{});state.remember=false;state.bookmarks=[];try{localStorage.removeItem('duizhao-settings');}catch{}$('#rememberFiles').checked=false;drawBookmarks();saveState();$('#storageLabel').textContent='已清除记录 · 当前文件仍可阅读';toast('本机保存的文件与对照页已清除。');};$('#sessionDone').onclick=()=>modal.close();drawBookmarks();
+  dialog('阅读记录',`<div class="storage-option"><label class="checkbox"><input type="checkbox" id="rememberFiles" ${state.remember?'checked':''}>在本机记住文件、批注与阅读进度</label><p>仅此浏览器可用。清除浏览器数据后，需重新选择文件。</p></div><button class="outline" id="bookmarkCurrent">${icon('bookmark')}保存当前对照页</button><div id="bookmarks" class="bookmarks-list"></div><div class="modal-actions"><button class="quiet" id="clearStored">清除本机记录</button><button class="primary" id="sessionDone">完成</button></div>`);
+  $('#rememberFiles').onchange=async e=>{state.remember=e.target.checked;if(state.remember){for(const side of ['left','right'])if(panes[side].file){await saveFile(side,panes[side].file);await editor.persist(panes[side]);}}else{await storage('clear').catch(()=>{});$('#storageLabel').textContent='文件仅在本次阅读中保留';}saveState();};
+  $('#bookmarkCurrent').onclick=()=>{addBookmark();drawBookmarks();};$('#clearStored').onclick=async()=>{await storage('clear').catch(()=>{});state.remember=false;state.bookmarks=[];try{localStorage.removeItem('duizhao-settings');}catch{}$('#rememberFiles').checked=false;drawBookmarks();saveState();$('#storageLabel').textContent='已清除记录 · 当前文件仍可阅读';toast('本机保存的文件、批注与对照页已清除。当前打开的批注仍可导出。');};$('#sessionDone').onclick=()=>modal.close();drawBookmarks();
 }
 function drawBookmarks(){const list=$('#bookmarks');list.replaceChildren();if(!state.bookmarks.length){list.append(safeText('p','尚未保存对照页。'));return;}state.bookmarks.forEach((b,i)=>{const row=safeText('div','','bookmark-row'),go=safeText('button',`原件 ${b.left} 页 · 改件 ${b.right} 页`),remove=safeText('button','×');remove.setAttribute('aria-label','删除此对照页');go.onclick=()=>{state.offset=b.right-b.left;panes.left.goto(b.left,false);panes.right.goto(b.right,false);updateGlobal();modal.close();saveState();};remove.onclick=()=>{state.bookmarks.splice(i,1);saveState();drawBookmarks();};row.append(go,remove);list.append(row);});}
 $('#sessionBtn').onclick=showSession;
 $('#demoBtn').onclick=async()=>{if(panes.left.doc||panes.right.doc){dialog('打开试读示例',`<p>示例会替换当前两份文档。您可以随时重新打开自己的文件。</p><div class="modal-actions"><button class="outline" id="cancelDemo">取消</button><button class="primary" id="confirmDemo">打开示例</button></div>`);$('#cancelDemo').onclick=()=>modal.close();$('#confirmDemo').onclick=()=>{modal.close();loadDemo();};}else await loadDemo();};
-async function loadDemo(){try{const files=await Promise.all(['original','revised'].map(async(type,i)=>{const response=await fetch(`./samples/${type}.pdf`);if(!response.ok)throw Error('demo');return new File([await response.blob()],`对照阅读示例_${i?'改件':'原件'}.pdf`,{type:'application/pdf',lastModified:1});}));await openPair(files);toast('已打开 3 页试读示例，可试用翻页、搜索和主题。');}catch{toast('示例暂时无法打开，请直接选择您的 PDF。');}}
+async function loadDemo(){try{const files=await Promise.all(['original','revised'].map(async(type,i)=>{const response=await fetch(`./samples/${type}.pdf`);if(!response.ok)throw Error('demo');return new File([await response.blob()],`对照阅读示例_${i?'改件':'原件'}.pdf`,{type:'application/pdf',lastModified:1});}));await openPair(files);toast('已打开 3 页试读示例，可试用连续滚动、批注与 PDF 导出。');}catch{toast('示例暂时无法打开，请直接选择您的 PDF。');}}
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){$('#themeMenu').hidden=true;$('#themeBtn').setAttribute('aria-expanded',false);if(!modal.open&&document.body.classList.contains('focused'))focusMode();return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='f'){if(panes.left.doc||panes.right.doc){e.preventDefault();showSearch();}return;}
