@@ -59,10 +59,10 @@ class Pane {
       this.pendingTask=task;
       task.onPassword=(update,reason)=>this.password(update,reason,task);
       const doc=await task.promise;
-      if(serial!==this.loadSerial){await doc.destroy();return;}
+      if(serial!==this.loadSerial){await doc.loadingTask.destroy();return;}
       this.renderTask?.cancel();this.textLayer?.cancel(); this.renderSerial++;
       this.scroller.destroy();const old=this.doc;this.doc=doc;this.file=file;this.page=pageNumber(options.page??1,doc.numPages);this.zoom=options.zoom||'width';this.rotation=options.rotation||0;this.textCache=new Map();this.pendingTask=null;
-      old?.destroy();
+      await old?.loadingTask.destroy();
       $('.doc-title',this.el).textContent=file.name;$('.doc-title',this.el).title=file.name;
       $('.doc-meta',this.el).textContent=`${names[this.side]} · ${doc.numPages} 页 · ${formatSize(file.size)}`;
       $('.empty-state',this.el).hidden=true;$('.page-space',this.el).hidden=false;$('.empty-footer',this.el).hidden=true;
@@ -74,7 +74,7 @@ class Pane {
       return true;
     } catch(e) {
       if(serial===this.loadSerial && !String(e.message).includes('destroyed'))toast(e.message==='请选择有效的 PDF 文件'?e.message:'无法打开这份 PDF，请检查文件是否完整、密码是否正确。');
-      console.warn('PDF load failed',e.name);
+      console.warn('PDF load failed',e.stack||e.name);
       return false;
     } finally {if(serial===this.loadSerial)this.loading.hidden=true;}
   }
@@ -110,7 +110,7 @@ class Pane {
     $('#closeFile').onclick=()=>{modal.close();this.clear();};
   }
   async clear(){
-    this.scroller.destroy();this.annotations=null;this.annotationKey=null;editor.attachSerial[this.side]++;this.loadSerial++;this.renderSerial++;this.pendingTask?.destroy();this.renderTask?.cancel();this.textLayer?.cancel();this.doc?.destroy();this.doc=null;this.file=null;this.page=1;this.pageEl.replaceChildren();
+    this.scroller.destroy();this.annotations=null;this.annotationKey=null;editor.attachSerial[this.side]++;this.loadSerial++;this.renderSerial++;this.pendingTask?.destroy();this.renderTask?.cancel();this.textLayer?.cancel();this.doc?.loadingTask.destroy();this.doc=null;this.file=null;this.page=1;this.pageEl.replaceChildren();
     $('.doc-title',this.el).textContent=names[this.side];$('.doc-title',this.el).removeAttribute('title');$('.doc-meta',this.el).textContent=this.side==='left'?'ORIGINAL DOCUMENT':'REVISED DOCUMENT';
     $('.empty-state',this.el).hidden=false;$('.empty-footer',this.el).hidden=false;
     for(const q of ['.page-space','.page-nav','.zoom-controls','.pane-menu-button'])$(q,this.el).hidden=true;
